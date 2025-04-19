@@ -1,6 +1,8 @@
 block-level on error undo, throw.
+using Progress.Json.ObjectModel.* from propath.
 using classes.APIBundles.* from propath.
 using classes.APIBundles.Errors.* from propath.
+using classes.APIBundles.Utils.JsonToBuffer from propath.
 
 class classes.APIBundles.APIDataConfiguration:
     define private temp-table buffers
@@ -63,6 +65,100 @@ class classes.APIBundles.APIDataConfiguration:
         end.
         
         return this-object.
+    end method.
+    
+    method public APIDataConfiguration copyToBuffer(
+        pJson as JsonObject,
+        pTargetId as character
+    ):
+        return copyToBuffer(
+            pJson, 
+            pTargetId, 
+            ?
+        ).
+    end method.
+    
+    method public APIDataConfiguration copyToBuffer(
+        pJson as JsonObject,
+        pTargetId as character,
+        pJsonToBuffer as JsonToBuffer
+    ):
+        return copyToBuffer(
+            pJson, 
+            pTargetId, 
+            pJsonToBuffer,
+            false
+        ).
+    end method.
+    
+    method public APIDataConfiguration copyToBuffer(
+        pJson as JsonObject,
+        pTargetId as character,
+        pJsonToBuffer as JsonToBuffer,
+        pForceUpdate as logical
+    ):
+        return copyToBuffer(
+            pJson, 
+            pTargetId, 
+            pJsonToBuffer, 
+            pForceUpdate, 
+            true
+        ).
+    end method.
+    
+    method public APIDataConfiguration copyToBuffer(
+        pJson as JsonObject,
+        pTargetId as character,
+        pJsonToBuffer as JsonToBuffer,
+        pForceUpdate as logical, 
+        pCheckForEmptyExtent as logical
+    ):
+        return copyToBuffer(
+            pJson, 
+            pTargetId, 
+            pJsonToBuffer, 
+            pForceUpdate, 
+            pCheckForEmptyExtent,
+            true
+        ).
+    end method.
+    
+    method public APIDataConfiguration copyToBuffer(
+        pJson as JsonObject,
+        pTargetId as character,
+        pJsonToBuffer as JsonToBuffer,
+        pForceUpdate as logical, 
+        pCheckForEmptyExtent as logical,
+        pIgnoreEmptySource as logical
+    ):
+        return copyToBuffer(
+            pJson, 
+            pTargetId, 
+            pJsonToBuffer, 
+            pForceUpdate, 
+            pCheckForEmptyExtent,
+            pIgnoreEmptySource,
+            false
+        ).    
+    end method.
+    
+    method public APIDataConfiguration copyToBuffer(
+        pJson as JsonObject,
+        pTargetId as character,
+        pJsonToBuffer as JsonToBuffer,
+        pForceUpdate as logical, 
+        pCheckForEmptyExtent as logical,
+        pIgnoreEmptySource as logical,
+        pIgnoreErrors as logical
+    ):
+        assertIdExists(pTargetId).
+        define variable converterObject as JsonToBuffer no-undo.
+        define variable resultBuffer as handle no-undo.
+        assign 
+            converterObject = if pJsonToBuffer = ? then new JsonToBuffer() else pJsonToBuffer
+            resultBuffer = converterObject:parseJson(pJson, buffers.bufferHandle).
+        
+        return copyToBuffer(resultBuffer, pTargetId, pForceUpdate, pCheckForEmptyExtent, pIgnoreEmptySource, pIgnoreErrors).
     end method.
     
     method public APIDataConfiguration copyToBuffer(pSourceBuffer as handle):
