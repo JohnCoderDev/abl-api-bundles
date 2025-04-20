@@ -402,6 +402,29 @@ class classes.APIBundles.APIDataConfiguration:
         ).
     end method.
     
+    method public handle getFirstBuffer():
+        find first buffers.
+        return if available buffers then buffers.bufferHandle else ?.
+    end method.
+    
+    method public handle getNextBuffer():
+        find next buffers.
+        return if available buffers then buffers.bufferHandle else ?.
+    end method.
+    
+    method public logical hasBuffers():
+        return temp-table buffers:has-records.
+    end method.
+    
+    method public logical hasBufferAvailable():
+        return available buffers.
+    end method.
+    
+    method public handle getBuffer(pId as character):
+        find first buffers where buffers.id = pId.
+        return buffers.bufferHandle.
+    end method.
+    
     method private logical bufferFieldIsIgnored(pBufferField as handle, pPosition as integer):
         return can-find(
             first ignoredFields
