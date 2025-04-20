@@ -1,9 +1,11 @@
 block-level on error undo, throw.
 using Progress.Lang.ParameterList from propath.
 using Progress.Reflect.Method from propath.
+using Progress.Json.ObjectModel.* from propath.
 using classes.APIBundles.APIValidator from propath.
 using classes.APIBundles.Validation.* from propath.
 using classes.APIBundles.Validation.Interfaces.* from propath.
+using classes.APIBundles.Utils.JsonToBuffer from propath.
 
 class classes.APIBundles.APIValidator:
     define protected property validatorArguments as ParameterList no-undo get. set.
@@ -11,6 +13,7 @@ class classes.APIBundles.APIValidator:
     define public property validationOK as logical no-undo get. private set.
     
     define private temp-table validators
+        field validatorGroup as character initial '*'
         field validator as character
         field validatorType as character        
             index idxValidator as primary unique validator
@@ -25,40 +28,66 @@ class classes.APIBundles.APIValidator:
         field errorObject as Progress.Lang.Object.
     
     constructor APIValidator():
-        assign validatorArguments = new ParameterList(2).
+        assign validatorArguments = new ParameterList(1).
         registerValidatorType('procedure', 'procedureValidation').
         registerValidatorType('class', 'classValidation').        
     end constructor.
     
-    method protected Progress.Lang.Object procedureValidation(pProcedure as character, pBuffer as handle):
+    method protected Progress.Lang.Object procedureValidation(pBuffer as handle):
         define variable procedureResponse as Progress.Lang.Object no-undo.
-        run value(pProcedure)(input pBuffer, output procedureResponse).
+        run value(validators.validator)(input pBuffer, output procedureResponse).
         return procedureResponse.
     end method.
     
-    method protected Progress.Lang.Object procedureValidation(pProcedure as character, pObject as Progress.Lang.Object):
+    method protected Progress.Lang.Object procedureValidation(pObject as Progress.Lang.Object):
         define variable procedureResponse as Progress.Lang.Object no-undo.
-        run value(pProcedure)(input pObject, output procedureResponse).
+        run value(validators.validator)(input pObject, output procedureResponse).
         return procedureResponse.
     end method.
     
-    method protected Progress.Lang.Object classValidation(pClass as character, pBuffer as handle):
+    method protected Progress.Lang.Object classValidation(pBuffer as handle):
         define variable classObject as Validator no-undo.
-        assign classObject = cast(Progress.Lang.Class:getClass(pClass):new(), Validator).
+        assign classObject = cast(Progress.Lang.Class:getClass(validators.validator):new(), Validator).
         return classObject:validate(pBuffer).
     end method.
     
-    method protected Progress.Lang.Object classValidation(pClass as character, pObject as Progress.Lang.Object):
+    method protected Progress.Lang.Object classValidation(pObject as Progress.Lang.Object):
         define variable classObject as Validator no-undo.
-        assign classObject = cast(Progress.Lang.Class:getClass(pClass):new(), Validator).
+        assign classObject = cast(Progress.Lang.Class:getClass(validators.validator):new(), Validator).
         return classObject:validate(pObject).
     end method.
     
+    method public APIValidator applyValidators(pJson as JsonObject):
+        return applyValidators(pJson, ?, ?).
+    end method.
+    
+    method public APIValidator applyValidators(pJson as JsonObject, pGroup as character):
+        return applyValidators(pJson, pGroup, ?).
+    end method.    
+    
+    method public APIValidator applyValidators(pJson as JsonObject, pGroup as character, pReferenceBuffer as handle):
+        define variable bufferHandle as handle no-undo.
+        define variable jsonTransformer as JsonToBuffer no-undo.
+        assign 
+            jsonTransformer = new JsonToBuffer()
+            bufferHandle = if pReferenceBuffer = ? 
+                then jsonTransformer:parseJson(pJson)
+                else jsonTransformer:parseJson(pJson, pReferenceBuffer).
+        
+        delete object jsonTransformer.
+        return applyValidators(bufferHandle, pGroup).
+    end method.
+
+    
     method public APIValidator applyValidators(pBuffer as handle):
+        return applyValidators(pBuffer, ?).
+    end method.
+    
+    method public APIValidator applyValidators(pBuffer as handle, pGroup as character):
         define variable validationResult as Progress.Lang.Object no-undo.
         empty temp-table validationErrors.
                 
-        for each validators no-lock:
+        for each validators no-lock where validators.validatorGroup matches pGroup:
             find validatorTypes of validators.
             assign 
                 validatorCallerMethod = getValidationCaller()
@@ -118,7 +147,7 @@ class classes.APIBundles.APIValidator:
         return this-object.
     end method.
     
-    method public handle getErrorsTable():
+    method public handle getValidationErrorsTable():
         define variable errorsTable as handle no-undo.
         define variable bufferHandle as handle no-undo.
         define variable errorObject as ValidationError no-undo.
@@ -143,8 +172,16 @@ class classes.APIBundles.APIValidator:
         return errorsTable.
     end method.
     
+    method public JsonArray getValidationErrorsJsonArray():
+        define variable resultArray as JsonArray no-undo.
+        assign resultArray = new JsonArray().
+        getValidationErrorsTable():write-json('JsonArray', resultArray, false, ?, false, true).
+        return resultArray.
+    end method.
+    
     method protected void registerValidationResult(pResult as Progress.Lang.Object):
-        if pResult:getClass():TypeName = 'classes.APIBundles.Validation.ValidationOK' then return.
+        if pResult:getClass():TypeName = 'classes.APIBundles.Validation.ValidationOK' 
+            or pResult = ? then return.
         
         define variable errorObject as Progress.Lang.Error no-undo.
         define variable idx as integer no-undo.
@@ -163,8 +200,7 @@ class classes.APIBundles.APIValidator:
     end method.
     
     method private Progress.Lang.Object invokeValidator(pMethod as Method, pObject as Progress.Lang.Object):
-        validatorArguments:setParameter(1, 'character', 'input', validators.validator).
-        validatorArguments:setParameter(2, 'Progress.Lang.Object', 'input', pObject).
+        validatorArguments:setParameter(1, 'Progress.Lang.Object', 'input', pObject).
         return validatorCallerMethod:Invoke(this-object, validatorArguments).
     end method.
     
@@ -179,6 +215,10 @@ class classes.APIBundles.APIValidator:
     end method.
     
     method public APIValidator registerValidator(pValidator as character, pValidatorType as character):
+        return registerValidator(pValidator, pValidatorType, ?).
+    end method.
+    
+    method public APIValidator registerValidator(pValidator as character, pValidatorType as character, pGroup as character):
         if not can-find(
             first validatorTypes 
             where validatorTypes.validatorType = pValidatorType
@@ -196,7 +236,8 @@ class classes.APIBundles.APIValidator:
         
         assign
             validators.validator = pValidator
-            validators.validatorType = pValidatorType.
+            validators.validatorType = pValidatorType
+            validators.validatorGroup = if pGroup = ? then '*' else pGroup.
             
         return this-object.
     end method.
