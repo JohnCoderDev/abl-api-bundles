@@ -70,6 +70,7 @@ class classes.APIBundles.Utils.JsonToBuffer:
         pJson as JsonObject, 
         pReferenceBuffer as handle
     ):
+        if pReferenceBuffer = ? then return parseJson(pJson).
         define variable resultTable as handle no-undo.
         define variable defaultBuffer as handle no-undo.
         define variable currentField as handle no-undo.

@@ -5,7 +5,7 @@ using Progress.Json.ObjectModel.* from propath.
 using classes.APIBundles.APIValidator from propath.
 using classes.APIBundles.Validation.* from propath.
 using classes.APIBundles.Validation.Interfaces.* from propath.
-using classes.APIBundles.Utils.JsonToBuffer from propath.
+using classes.APIBundles.Utils.SJsonToBuffer from propath.
 
 class classes.APIBundles.APIValidator:
     define protected property validatorArguments as ParameterList no-undo get. set.
@@ -67,14 +67,7 @@ class classes.APIBundles.APIValidator:
     
     method public APIValidator applyValidators(pJson as JsonObject, pGroup as character, pReferenceBuffer as handle):
         define variable bufferHandle as handle no-undo.
-        define variable jsonTransformer as JsonToBuffer no-undo.
-        assign 
-            jsonTransformer = new JsonToBuffer()
-            bufferHandle = if pReferenceBuffer = ? 
-                then jsonTransformer:parseJson(pJson)
-                else jsonTransformer:parseJson(pJson, pReferenceBuffer).
-        
-        delete object jsonTransformer.
+        assign bufferHandle = SJsonToBuffer:parseJson(pJson, pReferenceBuffer).
         return applyValidators(bufferHandle, pGroup).
     end method.
 
@@ -86,7 +79,8 @@ class classes.APIBundles.APIValidator:
     method public APIValidator applyValidators(pBuffer as handle, pGroup as character):
         define variable validationResult as Progress.Lang.Object no-undo.
         empty temp-table validationErrors.
-                
+        
+        assign pGroup = if pGroup = ? then '*' else pGroup.
         for each validators no-lock where validators.validatorGroup matches pGroup:
             find validatorTypes of validators.
             assign 
