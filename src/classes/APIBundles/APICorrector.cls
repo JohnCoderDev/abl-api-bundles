@@ -2,6 +2,7 @@ block-level on error undo, throw.
 using Progress.Lang.ParameterList from propath.
 using classes.APIBundles.APICorrector from propath.
 using classes.APIBundles.Correction.* from propath.
+using classes.APIBundles.Correction.Interfaces.* from propath.
 using classes.APIBundles.Errors.* from propath.
 
 
