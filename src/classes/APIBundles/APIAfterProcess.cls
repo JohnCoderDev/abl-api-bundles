@@ -12,13 +12,12 @@ class classes.APIBundles.APIAfterProcess:
     define private temp-table processes
         field processExecuter as character
         field processType as character
-        field bufferHandle as handle
-        field processId as character
+        field processGroup as character
         index idxType processType.
     
     define private temp-table processTypes 
         field processType as character
-        field processMethod as character
+        field executorMethod as character
         index idxType as primary unique processType.
         
     define private temp-table processesResponses
@@ -26,17 +25,18 @@ class classes.APIBundles.APIAfterProcess:
         field responseObject as Progress.Lang.Object.
         
     constructor APIAfterProcess():
-        assign processArgument = new ParameterList(0).
+        assign processArgument = new ParameterList(1).
+        processArgument:setParameter(1, 'handle', 'input', ?).
         addProcessType('procedure', 'processProcedure').
         addProcessType('class', 'processClass').
     end constructor.
     
-    method protected void processProcedure():
+    method protected void processProcedure(pBuffer as handle):
         define variable processResponse as Progress.Lang.Object.
         define variable nextProcess as APIAfterProcess no-undo.
         
         run value(processes.processExecuter)(
-            input processes.bufferHandle,
+            input pBuffer,
             output processResponse,
             output nextProcess
         ).
@@ -44,30 +44,32 @@ class classes.APIBundles.APIAfterProcess:
         addResponse(processResponse).
         
         if (processResponseIsOK(processResponse) and nextProcess <> ?) then do:
-            nextProcess:runProcesses().
+            nextProcess:runProcesses(pBuffer).
             copyResponses(nextProcess).
         end.
         
         delete object nextProcess.
     end method.
     
-    method protected void processClass():
+    method protected void processClass(pBuffer as handle):
         define variable processObject as AfterProcess no-undo.
         define variable processResponse as Progress.Lang.Object.
         
         assign 
             processObject = cast(Progress.Lang.Class:getClass(processes.processExecuter):new(), AfterProcess)
-            processResponse = processObject:runProcess(processes.bufferHandle).
+            processResponse = processObject:runProcess(pBuffer).
         
-        if processResponseIsOK(processResponse) and processObject:nextProcess <> ? then do:
-            processObject:nextProcess:runProcesses().
-            copyResponses(processObject:nextProcess).
+        if processResponseIsOK(processResponse) and processObject:nextProcesses <> ? then do:
+            processObject:nextProcesses:runProcesses(pBuffer).
+            copyResponses(processObject:nextProcesses).
         end.
         
         delete object processObject.
     end method.
     
     method private logical processResponseIsOK(pResponse as Progress.Lang.Object):
+        if pResponse = ? then
+            return true.
         return pResponse:getClass():typeName = 'classes.APIBundles.Process.ProcessOK'.
     end method.
     
@@ -84,7 +86,9 @@ class classes.APIBundles.APIAfterProcess:
         
         assign responsesDefaultBuffer = pProcesses:getResponses():default-buffer-handle.
         
+        
         create query handleQuery.
+        handleQuery:set-buffers(responsesDefaultBuffer).
         handleQuery:query-prepare('for each ' + responsesDefaultBuffer:name).
         handleQuery:query-open.
         handleQuery:get-first.
@@ -107,56 +111,47 @@ class classes.APIBundles.APIAfterProcess:
         return temp-table processesResponses:handle.
     end method.
     
-    method public void runProcesses():
-        empty temp-table processesResponses.
-        for each processes:
-            find processTypes of processes.
+    method public void runProcesses(pBuffer as handle):
+        runProcesses(pBuffer, ?).
+    end method.
+    
+    method public void runProcesses(pBuffer as handle, pGroup as character):
+        assign pGroup = if pGroup = ? then '*' else pGroup.
+        
+        for each processes no-lock 
+            where pGroup matches processes.processGroup:
+            find processTypes 
+                where processTypes.processType = processes.processType.
+            
+            processArgument:setParameter(1, 'handle', 'input', pBuffer).
             this-object
                 :getClass()
-                :getMethod(processTypes.processMethod, processArgument)
-                :Invoke(processArgument).
+                :Invoke(this-object, processTypes.executorMethod, processArgument).
         end.
     end method.
     
+    
     method public APIAfterProcess addProcess(
         pExecuter as character,
-        pType as character,
-        pBufferHandle as handle
+        pType as character
     ):
-        return addProcess(pExecuter, pType, pBufferHandle, pBufferHandle:name).
+        return addProcess(pExecuter, pType, ?).
     end method.
     
     method public APIAfterProcess addProcess(
         pExecuter as character,
         pType as character,
-        pBufferHandle as handle,
-        pId as character
+        pGroup as character
     ):
         assertProcessTypeExist(pType).
+        assign
+            pGroup = if pGroup = ? then '*' else pGroup.
         create processes.
         assign
             processes.processExecuter = pExecuter
             processes.processType = pType
-            processes.bufferHandle = pBufferHandle
-            processes.processId = pId .
-        
+            processes.processGroup = pGroup.
         return this-object.
-    end method.
-    
-    method public APIAfterProcess addProcess(
-        pExecuter as character,
-        pType as character,
-        pJson as JsonObject,
-        pId as character
-    ):
-        define variable bufferHandle as handle no-undo.
-        define variable jsonTransformer as JsonToBuffer no-undo.
-        assign 
-            jsonTransformer = new JsonToBuffer()
-            bufferHandle = jsonTransformer:parseJson(pJson).
-        
-        delete object jsonTransformer.
-        return addProcess(pExecuter, pType, bufferHandle, pId).
     end method.
     
     method public APIAfterProcess addProcessType(
@@ -177,7 +172,7 @@ class classes.APIBundles.APIAfterProcess:
         
         assign
             processTypes.processType = pType
-            processTypes.processMethod = pAssociatedMethod.
+            processTypes.executorMethod = pAssociatedMethod.
         
         return this-object.
     end method.
@@ -194,4 +189,8 @@ class classes.APIBundles.APIAfterProcess:
             no-error.
         return available processTypes.
     end method.
+    
+    method public APIAfterProcess clearResponses():
+        empty temp-table processesResponses.
+    end method.    
 end class.

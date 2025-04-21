@@ -3,13 +3,13 @@ using Progress.Lang.ParameterList from propath.
 using Progress.Reflect.Method from propath.
 using Progress.Json.ObjectModel.* from propath.
 using classes.APIBundles.APIValidator from propath.
+using classes.APIBundles.Errors.* from propath.
 using classes.APIBundles.Validation.* from propath.
 using classes.APIBundles.Validation.Interfaces.* from propath.
 using classes.APIBundles.Utils.SJsonToBuffer from propath.
 
 class classes.APIBundles.APIValidator:
     define protected property validatorArguments as ParameterList no-undo get. set.
-    define protected property validatorCallerMethod as Method no-undo get. set.
     define public property validationOK as logical no-undo get. private set.
     
     define private temp-table validators
@@ -21,7 +21,7 @@ class classes.APIBundles.APIValidator:
         
     define private temp-table validatorTypes
         field validatorType as character
-        field methodName as character
+        field executorMethod as character
             index idxType as primary unique validatorType.
             
     define private temp-table validationErrors
@@ -29,8 +29,9 @@ class classes.APIBundles.APIValidator:
     
     constructor APIValidator():
         assign validatorArguments = new ParameterList(1).
-        registerValidatorType('procedure', 'procedureValidation').
-        registerValidatorType('class', 'classValidation').        
+        validatorArguments:SetParameter(1, 'handle', 'input', ?).
+        addValidatorType('procedure', 'procedureValidation').
+        addValidatorType('class', 'classValidation').        
     end constructor.
     
     method protected Progress.Lang.Object procedureValidation(pBuffer as handle):
@@ -39,23 +40,16 @@ class classes.APIBundles.APIValidator:
         return procedureResponse.
     end method.
     
-    method protected Progress.Lang.Object procedureValidation(pObject as Progress.Lang.Object):
-        define variable procedureResponse as Progress.Lang.Object no-undo.
-        run value(validators.validator)(input pObject, output procedureResponse).
-        return procedureResponse.
-    end method.
-    
     method protected Progress.Lang.Object classValidation(pBuffer as handle):
         define variable classObject as Validator no-undo.
-        assign classObject = cast(Progress.Lang.Class:getClass(validators.validator):new(), Validator).
-        return classObject:validate(pBuffer).
+        define variable classResponse as Progress.Lang.Object no-undo.
+        assign 
+            classObject = cast(Progress.Lang.Class:getClass(validators.validator):new(), Validator)
+            classResponse = classObject:validate(pBuffer).
+        delete object classObject.    
+        return classResponse.
     end method.
-    
-    method protected Progress.Lang.Object classValidation(pObject as Progress.Lang.Object):
-        define variable classObject as Validator no-undo.
-        assign classObject = cast(Progress.Lang.Class:getClass(validators.validator):new(), Validator).
-        return classObject:validate(pObject).
-    end method.
+ 
     
     method public APIValidator applyValidators(pJson as JsonObject):
         return applyValidators(pJson, ?, ?).
@@ -80,12 +74,23 @@ class classes.APIBundles.APIValidator:
         define variable validationResult as Progress.Lang.Object no-undo.
         empty temp-table validationErrors.
         
+        validatorArguments:setParameter(1, 'handle', 'input', pBuffer).
+        
         assign pGroup = if pGroup = ? then '*' else pGroup.
-        for each validators no-lock where validators.validatorGroup matches pGroup:
-            find validatorTypes of validators.
+        
+        for each validators no-lock 
+            where validators.validatorGroup matches pGroup:
+            
+            find first validatorTypes 
+                where validatorTypes.validatorType = validators.validatorType.
+                
             assign 
-                validatorCallerMethod = getValidationCaller()
-                validationResult = invokeValidator(validatorCallerMethod, pBuffer).
+                validationResult = this-object:getClass():Invoke(
+                    this-object, 
+                    validatorTypes.executorMethod, 
+                    validatorArguments
+                ).
+                
             registerValidationResult(validationResult).    
         end.
         
@@ -174,8 +179,8 @@ class classes.APIBundles.APIValidator:
     end method.
     
     method protected void registerValidationResult(pResult as Progress.Lang.Object):
-        if pResult:getClass():TypeName = 'classes.APIBundles.Validation.ValidationOK' 
-            or pResult = ? then return.
+        if pResult = ? then return.
+        if pResult:getClass():TypeName = 'classes.APIBundles.Validation.ValidationOK' then return.
         
         define variable errorObject as Progress.Lang.Error no-undo.
         define variable idx as integer no-undo.
@@ -192,39 +197,15 @@ class classes.APIBundles.APIValidator:
                 ).    
         end.
     end method.
-    
-    method private Progress.Lang.Object invokeValidator(pMethod as Method, pObject as Progress.Lang.Object):
-        validatorArguments:setParameter(1, 'Progress.Lang.Object', 'input', pObject).
-        return validatorCallerMethod:Invoke(this-object, validatorArguments).
+  
+    method public APIValidator addValidator(pValidator as character, pValidatorType as character):
+        return addValidator(pValidator, pValidatorType, ?).
     end method.
     
-    method private Progress.Lang.Object invokeValidator(pMethod as Method, pBuffer as handle):
-        validatorArguments:setParameter(1, 'character', 'input', validators.validator).
-        validatorArguments:setParameter(2, 'handle', 'input', pBuffer).
-        return validatorCallerMethod:Invoke(this-object, validatorArguments).
-    end method.
-    
-    method private Method getValidationCaller():
-        return this-object:getClass():getMethod(validatorTypes.methodName, validatorArguments).
-    end method.
-    
-    method public APIValidator registerValidator(pValidator as character, pValidatorType as character):
-        return registerValidator(pValidator, pValidatorType, ?).
-    end method.
-    
-    method public APIValidator registerValidator(pValidator as character, pValidatorType as character, pGroup as character):
-        if not can-find(
-            first validatorTypes 
-            where validatorTypes.validatorType = pValidatorType
-        ) then do:
-            return error new classes.APIBundles.Errors.ValidatorTypeNotFound(pValidatorType).
-        end.
+    method public APIValidator addValidator(pValidator as character, pValidatorType as character, pGroup as character):
+        assertValidatorTypeExist(pValidatorType).
         
-        find first validators
-            where validators.validator = pValidator
-            no-error.
-            
-        if not available validators then do:
+        if not findValidator(pValidator) then do:
             create validators.
         end.
         
@@ -236,7 +217,7 @@ class classes.APIBundles.APIValidator:
         return this-object.
     end method.
     
-    method public APIValidator registerValidatorType(pValidatorType as character, pMethod as character):
+    method public APIValidator addValidatorType(pValidatorType as character, pMethod as character):
         do on error undo, throw:
             this-object:getClass():getMethod(pMethod, validatorArguments).
             
@@ -245,18 +226,34 @@ class classes.APIBundles.APIValidator:
             end catch.    
         end.
         
-        find first validatorTypes
-            where validatorTypes.validatorType = pValidatorType
-            no-error.
-        
-        if not available validatorTypes then do:
+        if not findValidatorType(pValidatorType) then do:
             create validatorTypes.
         end.
         
         assign
             validatorTypes.validatorType = pValidatorType
-            validatorTypes.methodName = pMethod.
+            validatorTypes.executorMethod = pMethod.
             
         return this-object.    
+    end method.
+    
+    method private logical findValidator(pValidator as character):
+        find first validators
+            where validators.validator = pValidator
+            no-error.
+        return available validators.
+    end method.    
+    
+    method private void assertValidatorTypeExist(pType as character):
+        if not findValidatorType(pType) then do:
+            return error new ValidatorTypeNotFound(pType).
+        end.    
+    end method.
+    
+    method private logical findValidatorType(pType as character):
+        find first validatorTypes
+            where validatorTypes.validatorType = pType
+            no-error.
+        return available validatorTypes.
     end method.
 end class.

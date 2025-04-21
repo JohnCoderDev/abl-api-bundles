@@ -13,6 +13,8 @@ class classes.APIBundles.Correction.CorrectorOperator:
         
     constructor CorrectorOperator():
         assign operatorArguments = new ParameterList(2).
+        operatorArguments:setParameter(1, 'handle', 'input', ?).
+        operatorArguments:setParameter(2, 'character', 'input', '').
         addOperator('= *', 'equal').
         addOperator('eq *', 'equal').
         addOperator('equal *', 'equal').
@@ -77,7 +79,7 @@ class classes.APIBundles.Correction.CorrectorOperator:
         end case.
     end method.
     
-    method protected logical greaterThan(pBufferField as handle, pArgument as character):
+    method protected logical greaterEqual(pBufferField as handle, pArgument as character):
         case pBufferField:data-type:
             when 'character' then return pBufferField:buffer-value >= pArgument.
             when 'integer' then return pBufferField:buffer-value >= int(pArgument).
@@ -103,7 +105,7 @@ class classes.APIBundles.Correction.CorrectorOperator:
         end case.
     end method.
     
-    method protected logical lowerThan(pBufferField as handle, pArgument as character):
+    method protected logical lowerEqual(pBufferField as handle, pArgument as character):
         case pBufferField:data-type:
             when 'character' then return pBufferField:buffer-value <= pArgument.
             when 'integer' then return pBufferField:buffer-value <= int(pArgument).
@@ -127,10 +129,10 @@ class classes.APIBundles.Correction.CorrectorOperator:
         
         operatorArguments:setParameter(1, 'handle', 'input', pBufferField).
         operatorArguments:setParameter(2, 'character', 'input', argument).
+        
         return this-object
             :getClass()
-            :getMethod(operators.associatedMethod, operatorArguments)
-            :Invoke(operatorArguments).
+            :Invoke(this-object, operators.associatedMethod, operatorArguments).
     end method.
         
     method public CorrectorOperator addOperator(pMatch as character, pMethod as character):

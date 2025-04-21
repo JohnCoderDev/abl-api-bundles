@@ -21,20 +21,21 @@ class classes.APIBundles.APICorrector:
     
     define private temp-table correctionType
         field correctorType as character
-        field internalMethod as character
+        field executorMethod as character
         index idxType as primary unique correctorType.
         
     constructor APICorrector():
         assign correctorArgument = new ParameterList(1).
+        correctorArgument:setParameter(1, 'handle', 'input', ?).    
         addCorrectionType('procedure', 'procedureCorrection').
         addCorrectionType('class', 'classCorrection').
     end constructor.
     
-    method protected void procedureCorrection(input-output pBuffer as handle):
-        run value(corrections.corrector) (input-output pBuffer).    
+    method protected void procedureCorrection(pBuffer as handle):
+        run value(corrections.corrector) (input pBuffer).    
     end method.
     
-    method protected void classCorrection(input-output pBuffer as handle):
+    method protected void classCorrection(pBuffer as handle):
         define variable correctorObject as Corrector no-undo.
         assign correctorObject = cast(Progress.Lang.Class:getClass(corrections.corrector):new(), Corrector).
         correctorObject:correct(pBuffer).
@@ -66,33 +67,38 @@ class classes.APIBundles.APICorrector:
     end method.
    
    
-    method public void applyCorrections(input-output pBuffer as handle):
+    method public void applyCorrections(pBuffer as handle):
         applyCorrections(pBuffer, true).
     end method.
     
-    method public void applyCorrections(input-output pBuffer as handle, pIgnoreErrors as logical):
+    method public void applyCorrections(pBuffer as handle, pIgnoreErrors as logical):
         applyCorrections(pBuffer, pIgnoreErrors, ?).
     end method.
     
-    method public void applyCorrections(input-output pBuffer as handle, pIgnoreErrors as logical, pGroup as character):
+    method public void applyCorrections(pBuffer as handle, pIgnoreErrors as logical, pGroup as character):
         define variable operator as CorrectorOperator no-undo.
         define variable currentField as handle no-undo.
         assign 
             operator = new CorrectorOperator()
             pGroup = if pGroup = ? then '*' else pGroup.
         
-        for each corrections no-lock where corrections.correctorGroup matches pGroup:
+        
+        for each corrections no-lock where pGroup matches corrections.correctorGroup:
             do on error undo, next:
-                assign currentField = pBuffer:buffer-field(corrections.targetField).
-                
+                assign currentField = if corrections.targetField = ''
+                    then ?
+                    else pBuffer:buffer-field(corrections.targetField).
+                    
                 if not operator:applyOperation(currentField, corrections.whenPhrase) then next.
                 
-                find correctionType of corrections.
-                correctorArgument:setParameter(1, 'handle', 'input-output', pBuffer).
+                find correctionType 
+                    where correctionType.correctorType = corrections.correctorType.
+                    
+                correctorArgument:setParameter(1, 'handle', 'input', pBuffer).
+                
                 this-object
                     :getClass()
-                    :getMethod(correctionType.internalMethod, correctorArgument)
-                    :Invoke(correctorArgument).
+                    :Invoke(this-object, correctionType.executorMethod, correctorArgument).
                     
                 catch errorObject as Progress.Lang.Error:
                     if not pIgnoreErrors then do:
@@ -107,13 +113,15 @@ class classes.APIBundles.APICorrector:
     
     method public APICorrector addCorrectionType(
         pCorrectionType as character,
-        pInternalMethod as character
+        pExecuterMethod as character
     ):
         do on error undo, throw:
-            this-object:getClass():getMethod(pInternalMethod, correctorArgument).
+            this-object
+                :getClass()
+                :getMethod(pExecuterMethod, correctorArgument).
             
             catch errorObject as Progress.Lang.Error:
-                return error new CorrectionMethodDoesNotExist(pInternalMethod).
+                return error new CorrectionMethodDoesNotExist(pExecuterMethod).
             end catch.
         end.
         
@@ -123,27 +131,36 @@ class classes.APIBundles.APICorrector:
         
         assign
             correctionType.correctorType = pCorrectionType
-            correctionType.internalMethod = pInternalMethod.
+            correctionType.executorMethod = pExecuterMethod.
             
         return this-object.    
     end method.
     
-    method public APICorrector addCorrection(
+    method public APICorrector addCorrector(
         pCorrector as character,
         pCorrectorType as character
     ):
-        return addCorrection(pCorrector, pCorrectorType, ?).
+        return addCorrector(pCorrector, pCorrectorType, ?).
     end method.
     
-    method public APICorrector addCorrection(
+    method public APICorrector addCorrector(
         pCorrector as character,
         pCorrectorType as character,
         pGroup as character
     ):
-        return addCorrection(pCorrector, pCorrectorType, pGroup, '', 'always').
+        return addCorrector(pCorrector, pCorrectorType, pGroup, '', 'always').
     end method.
     
-    method public APICorrector addCorrection(
+    method public APICorrector addCorrector(
+        pCorrector as character,
+        pCorrectorType as character,
+        pTargetField as character,
+        pWhen as character
+    ):
+        return addCorrector(pCorrector, pCorrectorType, ? , pTargetField, pWhen).
+    end method.
+    
+    method public APICorrector addCorrector(
         pCorrector as character,
         pCorrectorType as character,
         pGroup as character,

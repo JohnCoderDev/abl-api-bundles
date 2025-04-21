@@ -6,6 +6,7 @@ class classes.APIBundles.Validation.ValidationError inherits Progress.Lang.AppEr
         initial "classes.APIBundles.Validation.ValidationError" no-undo get. private set.
     
     constructor ValidationError():
+        addMessage('validation error', -5700).
     end constructor.
     
     constructor ValidationError(pMessage as character):

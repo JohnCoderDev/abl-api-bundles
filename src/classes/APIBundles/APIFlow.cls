@@ -1,15 +1,16 @@
 block-level on error undo, throw.
-using Progress.Lang.ParameterList from propath.
+using Progress.Lang.* from propath.
+using Progress.Reflect.Method from propath.
 using classes.APIBundles.* from propath.
 using classes.APIBundles.Errors.* from propath.
 using classes.APIBundles.Flow.Interfaces.* from propath.
 
 class classes.APIBundles.APIFlow implements Flow:
     define private property flowArgument as ParameterList no-undo get. set.
-    define public property dataConfiguration as APIDataConfiguration no-undo get. private set.
-    define public property validations as APIValidator no-undo get. private set.
-    define public property corrections as APICorrector no-undo get. private set.
-    define public property afterProcess as APIAfterProcess no-undo get. private set.
+    define public property dataConfiguration as APIDataConfiguration no-undo get. protected set.
+    define public property validations as APIValidator no-undo get. protected set.
+    define public property corrections as APICorrector no-undo get. protected set.
+    define public property afterProcess as APIAfterProcess no-undo get. protected set.
     
     define private temp-table flowTypes
         field flowType as character
@@ -46,10 +47,10 @@ class classes.APIBundles.APIFlow implements Flow:
     method protected void methodFlow():
         define variable methodArgument as ParameterList no-undo.
         assign methodArgument = new ParameterList(0).
+        
         this-object
             :getClass()
-            :getMethod(flows.flowObject, methodArgument)
-            :Invoke(methodArgument).
+            :Invoke(this-object, flows.flowObject, methodArgument).
     end method.
     
     method public void addFlow(pFlowObject as character, pFlowType as character):
@@ -59,7 +60,7 @@ class classes.APIBundles.APIFlow implements Flow:
         end.
         assign
             flows.flowType = pFlowType
-            flows.flowObject = pFlowObject.
+            flows.flowObject = pFlowObject.    
     end method.
     
     method public void addFlowType(pFlowType as character, pExecutorMethod as character):
@@ -69,7 +70,14 @@ class classes.APIBundles.APIFlow implements Flow:
             catch errorObject as Progress.Lang.Error:
                 return error new FlowExecutorMethodNotFound(pExecutorMethod).
             end catch.
-        end.    
+        end.
+        if not findFlowType(pFlowType) then do:        
+            create flowTypes.
+        end.
+        
+        assign
+            flowTypes.flowType = pFlowType
+            flowTypes.executorMethod = pExecutorMethod.
     end method.
     
     method public void executeFlow(pFlow as Progress.Lang.Object):
@@ -77,37 +85,56 @@ class classes.APIBundles.APIFlow implements Flow:
     end method.
     
     method public void runFlow():
+        runFlow(true).
+    end method.
+    
+    method public void runFlow(pUseGroup as logical):
         if not dataConfiguration:hasBuffers() then do:
             return error new DataConfigurationNotSettled().
         end.
         
         define variable currentBuffer as handle no-undo.
+        define variable currentGroup as character no-undo.
         define variable currentArgument as ParameterList no-undo.
-        assign currentBuffer = this-object:dataConfiguration:getFirstBuffer().
+        assign 
+            currentBuffer = dataConfiguration:getFirstBuffer().
         
         do while dataConfiguration:hasBufferAvailable():
-            corrections:applyCorrections(currentBuffer).
-            validations:applyValidators(currentBuffer).
-            if not validations:validationOK then do:
-                validations:throwValidationErrors().
+            assign currentGroup = if pUseGroup then currentBuffer:name else ?.
+            if corrections <> ? then do:
+                corrections:applyCorrections(currentBuffer, true, currentGroup).
             end.
+            if validations <> ? then do:
+                validations:applyValidators(currentBuffer, currentGroup).
+                if not validations:validationOK then do:
+                    validations:throwValidationErrors().
+                end.
+            end.    
             assign currentBuffer = dataConfiguration:getNextBuffer().
         end.
         
         for each flows no-lock:
             find flowTypes of flows.
-            assign currentArgument = new ParameterList(0).
-            this-object
-                :getClass()
-                :getMethod(flowTypes.executorMethod, currentArgument)
-                :Invoke(currentArgument).
+            assign 
+                currentArgument = new ParameterList(0).
+                this-object:getClass():Invoke(this-object, flowTypes.executorMethod).
         end.
         
-        if not validations:validationOK then do:
-            validations:throwValidationErrors().
-        end.
+        if validations <> ? then do:
+            if not validations:validationOK then do:
+                validations:throwValidationErrors().
+            end.
+        end.    
         
-        afterProcess:runProcesses().
+        
+        if afterProcess <> ? then do:
+            assign currentBuffer = dataConfiguration:getFirstBuffer().
+            do while dataConfiguration:hasBufferAvailable():
+                assign currentGroup = if pUseGroup then currentBuffer:name else ?.
+                afterProcess:runProcesses(currentBuffer, currentGroup).
+                assign currentBuffer = dataConfiguration:getNextBuffer().
+            end.
+        end.    
     end method.
     
     method private logical findFlowObject(pObject as character):
@@ -128,5 +155,25 @@ class classes.APIBundles.APIFlow implements Flow:
             where flowTypes.flowType = pType
             no-error.
         return available flowTypes.
+    end method.
+    
+    method public APIDataConfiguration startDataConfiguration():
+        assign dataConfiguration = new APIDataConfiguration().
+        return dataConfiguration.
+    end method.
+    
+    method public APICorrector startCorrector():
+        assign corrections = new APICorrector().
+        return corrections.
+    end method.
+    
+    method public APIValidator startValidator():
+        assign validations = new APIValidator().
+        return validations.
+    end method.
+    
+    method public APIAfterProcess startAfterProcess():
+        assign afterProcess = new APIAfterProcess().
+        return afterProcess.
     end method.
 end class.
