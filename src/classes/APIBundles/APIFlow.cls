@@ -4,6 +4,8 @@ using Progress.Reflect.Method from propath.
 using classes.APIBundles.* from propath.
 using classes.APIBundles.Errors.* from propath.
 using classes.APIBundles.Flow.Interfaces.* from propath.
+using classes.APIBundles.Validation.Interfaces.* from propath.
+using classes.APIBundles.Process.Interfaces.* from propath.
 
 class classes.APIBundles.APIFlow implements Flow:
     define private property flowArgument as ParameterList no-undo get. set.
@@ -11,6 +13,8 @@ class classes.APIBundles.APIFlow implements Flow:
     define public property validations as APIValidator no-undo get. protected set.
     define public property corrections as APICorrector no-undo get. protected set.
     define public property afterProcess as APIAfterProcess no-undo get. protected set.
+    
+    define private property throwValidationErrors as logical no-undo get. set.
     
     define private temp-table flowTypes
         field flowType as character
@@ -22,6 +26,13 @@ class classes.APIBundles.APIFlow implements Flow:
         field flowObject as character
         index idxObject as primary unique flowObject
         index idxType flowType.
+    
+    define private temp-table validationErrorsProcess
+        field className as character.
+        
+    define private temp-table onProcesses
+        field className as character.
+            
         
     constructor APIFlow():
         assign flowArgument = new ParameterList(0).
@@ -88,53 +99,105 @@ class classes.APIBundles.APIFlow implements Flow:
         runFlow(true).
     end method.
     
-    method public void runFlow(pUseGroup as logical):
+    method public void runFlow(pUseBufferNameAsGroup as logical):
         if not dataConfiguration:hasBuffers() then do:
             return error new DataConfigurationNotSettled().
         end.
         
+        runBeforeFlows(pUseBufferNameAsGroup).
+        runEachFlow().
+        executeValidationErrorsProcesses().
+        runAfterProcesses(pUseBufferNameAsGroup).
+    end method.
+    
+    method protected void runEachFlow():
+        for each flows no-lock:
+            find flowTypes where flowTypes.flowType = flows.flowType.
+            invokeFlowObject().
+        end.
+    end method.
+    
+    method protected void invokeFlowObject():
+        this-object:getClass():Invoke(this-object, flowTypes.executorMethod).
+    end method.
+    
+    method protected void runBeforeFlows(pUseBufferNameAsGroup as logical):
         define variable currentBuffer as handle no-undo.
         define variable currentGroup as character no-undo.
-        define variable currentArgument as ParameterList no-undo.
-        assign 
-            currentBuffer = dataConfiguration:getFirstBuffer().
+        assign currentBuffer = dataConfiguration:getFirstBuffer().
         
         do while dataConfiguration:hasBufferAvailable():
-            assign currentGroup = if pUseGroup then currentBuffer:name else ?.
-            if corrections <> ? then do:
-                corrections:applyCorrections(currentBuffer, true, currentGroup).
-            end.
-            if validations <> ? then do:
-                validations:applyValidators(currentBuffer, currentGroup).
-                if not validations:validationOK then do:
-                    validations:throwValidationErrors().
-                end.
-            end.    
+            assign currentGroup = if pUseBufferNameAsGroup then currentBuffer:name else ?.
+            runCorrections(currentBuffer, currentGroup).
+            runValidations(currentBuffer, currentGroup).    
             assign currentBuffer = dataConfiguration:getNextBuffer().
         end.
-        
-        for each flows no-lock:
-            find flowTypes of flows.
-            assign 
-                currentArgument = new ParameterList(0).
-                this-object:getClass():Invoke(this-object, flowTypes.executorMethod).
-        end.
-        
-        if validations <> ? then do:
-            if not validations:validationOK then do:
-                validations:throwValidationErrors().
-            end.
-        end.    
-        
+    end method.
+    
+    method protected void runAfterProcesses(pUseBufferNameAsGroup as logical):
+        define variable currentBuffer as handle no-undo.
+        define variable currentGroup as character no-undo.
         
         if afterProcess <> ? then do:
             assign currentBuffer = dataConfiguration:getFirstBuffer().
             do while dataConfiguration:hasBufferAvailable():
-                assign currentGroup = if pUseGroup then currentBuffer:name else ?.
+                assign currentGroup = if pUseBufferNameAsGroup then currentBuffer:name else ?.
                 afterProcess:runProcesses(currentBuffer, currentGroup).
+                runOnProcesses().
                 assign currentBuffer = dataConfiguration:getNextBuffer().
             end.
         end.    
+    end method.
+    
+    method protected void runOnProcesses():
+        for each onProcesses no-lock:
+            executeOnProcess().
+        end.
+    end method.
+    
+    method protected void executeOnProcess():
+        define variable onProcessObject as OnAfterProcess no-undo.
+        assign onProcessObject = cast(Progress.Lang.Class:getClass(onProcesses.className):new(), OnAfterProcess).
+        onProcessObject:executeProcess(afterProcess).
+        delete object onProcessObject.
+    end method.
+    
+    method protected void runCorrections(pBuffer as handle, pGroup as character):
+        if corrections <> ? then do:
+            corrections:applyCorrections(pBuffer, true, pGroup).
+        end.
+    end method.
+    
+    method protected void runValidations(pBuffer as handle, pGroup as character):
+        if validations <> ? then do:
+            validations:applyValidators(pBuffer, pGroup).
+            executeValidationErrorsProcesses().
+        end.
+    end method.
+    
+    method protected logical shouldThrowValidationErrors():
+        if validations <> ? then do:
+            return not validations:validationOK and throwValidationErrors.
+        end.
+        return false.
+    end method.
+    
+    method protected void executeValidationErrorsProcesses():
+        if not validations:validationOK then do:
+            for each validationErrorsProcess no-lock:
+                executeCurrentValidationErrorProcess().
+            end.
+        end.    
+        if shouldThrowValidationErrors() then do:
+            validations:throwValidationErrors().
+        end.
+    end method.
+    
+    method protected void executeCurrentValidationErrorProcess():
+        define variable errorProcess as OnValidationError no-undo.
+        assign errorProcess = cast(Progress.Lang.Class:getClass(validationErrorsProcess.className):new(), OnValidationError).
+        errorProcess:executeProcess(validations).
+        delete object errorProcess.
     end method.
     
     method private logical findFlowObject(pObject as character):
@@ -176,4 +239,22 @@ class classes.APIBundles.APIFlow implements Flow:
         assign afterProcess = new APIAfterProcess().
         return afterProcess.
     end method.
+    
+    method public void throwValidationErrorsOn():
+        assign throwValidationErrors = true.
+    end method.
+    
+    method public void throwValidationErrorsOff():
+        assign throwValidationErrors = false.
+    end method.
+    
+    method public void addValidationErrorProcess(pClass as character):
+        create validationErrorsProcess.
+        assign validationErrorsProcess.className = pClass.
+    end method.
+    
+    method public void addOnProcess(pClass as character):
+        create onProcesses.
+        assign onProcesses.className = pClass.
+    end method.    
 end class.
