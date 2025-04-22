@@ -1,0 +1,5 @@
+*.r
+*.log
+build-prod.json
+build-teste.json
+build-fix.json
