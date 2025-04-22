@@ -105,6 +105,11 @@ class classes.APIBundles.APIFlow implements Flow:
         end.
         
         runBeforeFlows(pUseBufferNameAsGroup).
+        
+        if not validations:validationOK then do:
+            return.
+        end.
+        
         runEachFlow().
         executeValidationErrorsProcesses().
         runAfterProcesses(pUseBufferNameAsGroup).

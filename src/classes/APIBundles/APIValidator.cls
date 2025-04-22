@@ -72,7 +72,6 @@ class classes.APIBundles.APIValidator:
     
     method public APIValidator applyValidators(pBuffer as handle, pGroup as character):
         define variable validationResult as Progress.Lang.Object no-undo.
-        empty temp-table validationErrors.
         
         validatorArguments:setParameter(1, 'handle', 'input', pBuffer).
         
@@ -113,6 +112,10 @@ class classes.APIBundles.APIValidator:
         end.
         
         return error errors.
+    end method.
+    
+    method public APIValidator clearValidationErrors():
+        empty temp-table validationErrors.
     end method.
     
     method public APIValidator loadErrorsFromTable(
