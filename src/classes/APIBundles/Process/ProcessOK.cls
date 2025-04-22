@@ -1,4 +1,4 @@
-class classes.APIBundles.ProcessOK:
+class classes.APIBundles.Process.ProcessOK:
     define public property processMessage as character no-undo get. private set.
     
     constructor ProcessOK():
