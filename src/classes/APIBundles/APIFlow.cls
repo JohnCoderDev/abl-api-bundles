@@ -262,4 +262,15 @@ class classes.APIBundles.APIFlow implements Flow:
         create onProcesses.
         assign onProcesses.className = pClass.
     end method.    
+    
+    destructor APIFlow():
+        empty temp-table flowTypes.
+        empty temp-table flows.
+        empty temp-table onProcesses.
+        empty temp-table validationErrorsProcess.
+        delete object validations no-error.
+        delete object corrections no-error.
+        delete object dataConfiguration no-error.
+        delete object afterProcess no-error.
+    end destructor.
 end class.

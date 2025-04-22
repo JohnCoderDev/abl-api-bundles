@@ -146,6 +146,7 @@ class classes.APIBundles.APIValidator:
         
         queryHandle:query-close.
         delete object queryHandle.
+        updateValidationStatus().
         return this-object.
     end method.
     
