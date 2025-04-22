@@ -158,7 +158,7 @@ class classes.APIBundles.APIFlow implements Flow:
     method protected void executeOnProcess():
         define variable onProcessObject as OnAfterProcess no-undo.
         assign onProcessObject = cast(Progress.Lang.Class:getClass(onProcesses.className):new(), OnAfterProcess).
-        onProcessObject:executeProcess(afterProcess).
+        onProcessObject:executeProcess(afterProcess, this-object).
         delete object onProcessObject.
     end method.
     
@@ -196,7 +196,7 @@ class classes.APIBundles.APIFlow implements Flow:
     method protected void executeCurrentValidationErrorProcess():
         define variable errorProcess as OnValidationError no-undo.
         assign errorProcess = cast(Progress.Lang.Class:getClass(validationErrorsProcess.className):new(), OnValidationError).
-        errorProcess:executeProcess(validations).
+        errorProcess:executeProcess(validations, this-object).
         delete object errorProcess.
     end method.
     
