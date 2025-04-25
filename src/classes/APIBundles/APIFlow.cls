@@ -36,6 +36,10 @@ class classes.APIBundles.APIFlow implements Flow:
         
     constructor APIFlow():
         assign flowArgument = new ParameterList(0).
+        startDataConfiguration().
+        startValidator().
+        startCorrector().
+        startAfterProcess().
         addFlowType('procedure', 'procedureFlow').
         addFlowType('class', 'classFlow').
         addFlowType('method', 'methodFlow').
@@ -106,12 +110,21 @@ class classes.APIBundles.APIFlow implements Flow:
         
         runBeforeFlows(pUseBufferNameAsGroup).
         
-        if not validations:validationOK then do:
-            return.
+        if validations <> ? then do:
+            if not validations:validationOK then do:
+                return.
+            end.
         end.
         
         runEachFlow().
         executeValidationErrorsProcesses().
+        
+        if validations <> ? then do:
+            if not validations:validationOK then do:
+                return.
+            end.
+        end.
+        
         runAfterProcesses(pUseBufferNameAsGroup).
     end method.
     
