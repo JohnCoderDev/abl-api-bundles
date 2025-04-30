@@ -58,10 +58,10 @@ class classes.APIBundles.Utils.SafeBufferCopy:
         
         if pBufferField:extent > 0 then
             return 
-                string(pBufferField:buffer-value[pExtent]) = pBufferField:initial
-                or pBufferField:buffer-value[pExtent] = ?.
+                pBufferField:string-value(pExtent) = pBufferField:initial
+                or pBufferField:string-value(pExtent) = ?.
             
-        return string(pBufferField:buffer-value) = pBufferField:initial.
+        return pBufferField:string-value = pBufferField:initial.
     end method.
     
     method public SafeBufferCopy addFieldToCopy(pFieldName as character):
